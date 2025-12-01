@@ -29,6 +29,15 @@ class SchedulerManager:
         )
         logger.info("Scheduled task set: refresh every hour")
     
+    def trigger_immediate_refresh(self):
+        """Trigger an immediate data refresh (non-blocking)"""
+        import threading
+        def run_refresh():
+            self._refresh_jobs()
+        thread = threading.Thread(target=run_refresh, daemon=True)
+        thread.start()
+        logger.info("Immediate refresh triggered in background thread")
+    
     def _refresh_jobs(self):
         """Execute data refresh"""
         try:
