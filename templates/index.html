@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ascendo AI Community Jobs</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="header-top">
+                <h1>Ascendo AI Community Jobs</h1>
+                <div class="header-stats">
+                    <span id="jobs-count-header" class="job-count">0</span>
+                </div>
+            </div>
+            <div class="header-subtitle">
+                <span id="companies-count">0</span> active companies • updated every hour
+            </div>
+        </header>
+
+        <div class="search-section">
+            <div class="search-row">
+                <div class="search-input-wrapper">
+                    <input type="text" id="search-input" placeholder="Search job titles (e.g., software engineer, data scientist)...">
+                </div>
+                <div class="search-input-wrapper">
+                    <input type="text" id="location-input" placeholder="Add your location">
+                </div>
+            </div>
+            <div class="filter-buttons">
+                <select id="level-filter" class="filter-select">
+                    <option value="">Level</option>
+                    <option value="entry">Entry Level (Intern, New Graduate)</option>
+                    <option value="mid">Mid-level</option>
+                    <option value="senior">Senior Level</option>
+                </select>
+                <button class="filter-btn" data-filter="details">Details</button>
+                <select id="pay-filter" class="filter-select">
+                    <option value="">Pay</option>
+                    <option value="0">From $0</option>
+                    <option value="10000">From $10,000</option>
+                    <option value="50000">From $50,000</option>
+                    <option value="100000">From $100,000</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="jobs-section">
+            <div id="jobs-container">
+                <div class="loading">Loading...</div>
+            </div>
+            <div class="pagination">
+                <button id="prev-page" class="btn-pagination">Previous</button>
+                <span id="page-info">Page 1</span>
+                <button id="next-page" class="btn-pagination">Next</button>
+            </div>
+        </div>
+
+        <!-- Admin Section (Collapsible) -->
+        <div class="admin-section">
+            <button id="admin-toggle" class="admin-toggle">⚙️ Admin Settings</button>
+            <div id="admin-panel" class="admin-panel" style="display: none;">
+                <h3>Add Data Source</h3>
+                <p style="color: #666; font-size: 0.9em; margin-bottom: 20px;">
+                    Add a new data source to collect job listings. For Adzuna API, enter a search keyword (e.g., "field service", "software engineer"). Leave empty or use "all" to fetch all jobs.
+                </p>
+                <form id="add-source-form">
+                    <div class="form-group">
+                        <label>Source Type:</label>
+                        <select id="source-type" required>
+                            <option value="api" selected>Adzuna API</option>
+                            <option value="rss">RSS Feed</option>
+                            <option value="url">Company URL</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label id="source-url-label">Search Query / URL:</label>
+                        <input type="text" id="source-url" placeholder="e.g., field service, software engineer, or leave empty for all jobs" required>
+                        <small id="source-url-hint" style="color: #999; font-size: 0.85em;">For Adzuna API: Enter keywords or leave empty for all jobs. For other types: Enter the full URL.</small>
+                    </div>
+                    <div class="form-group">
+                        <label>Name (Optional):</label>
+                        <input type="text" id="source-name" placeholder="e.g., Adzuna - Field Service Jobs">
+                    </div>
+                    <button type="submit" class="btn btn-primary">Add Source</button>
+                </form>
+                <div class="admin-actions">
+                    <button id="refresh-btn" class="btn btn-secondary">🔄 Refresh Now</button>
+                    <div class="status-info">
+                        <span>Last Refresh: <span id="last-refresh">Never</span></span>
+                        <span>Data Sources: <span id="sources-count">0</span></span>
+                    </div>
+                </div>
+                <div id="sources-list" style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #e5e5e5;">
+                    <h4 style="margin-bottom: 10px;">Current Data Sources</h4>
+                    <div id="sources-container" style="font-size: 0.9em; color: #666;">
+                        Loading...
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
