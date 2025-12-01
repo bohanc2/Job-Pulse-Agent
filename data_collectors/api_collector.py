@@ -99,12 +99,15 @@ class APICollector:
                 search_query = search_query_or_url.strip() if search_query_or_url else ''
                 base_url = f"https://api.adzuna.com/v1/api/jobs/{country}/search"
             
-            # Fetch all pages
+            # Limit pages to avoid exceeding daily API limits
+            # Adzuna free tier has daily request limits, so we limit to first 10 pages (500 jobs)
+            # This can be overridden with ADZUNA_MAX_PAGES environment variable
+            max_pages = int(os.getenv('ADZUNA_MAX_PAGES', '10'))  # Default: 10 pages = 500 jobs
             page = 1
-            max_pages = 1000  # Safety limit to prevent infinite loops
             results_per_page = 50
             
-            logger.info(f"Starting to collect all jobs from Adzuna API (country: {country}, query: '{search_query}')...")
+            logger.info(f"Starting to collect jobs from Adzuna API (country: {country}, query: '{search_query}', max_pages: {max_pages})...")
+            logger.info(f"Note: Limited to {max_pages} pages ({max_pages * results_per_page} jobs max) to avoid exceeding daily API limits")
             
             while page <= max_pages:
                 # Build API URL for current page
@@ -113,14 +116,51 @@ class APICollector:
                 else:
                     api_url = f"{base_url}/{page}?app_id={app_id}&app_key={app_key}&results_per_page={results_per_page}&what={search_query.replace(' ', '%20')}"
                 
-                logger.info(f"Fetching page {page} from Adzuna API...")
+                logger.info(f"Fetching page {page}/{max_pages} from Adzuna API...")
                 response = requests.get(api_url, timeout=30)
                 
-                if response.status_code != 200:
-                    logger.warning(f"Adzuna API request failed for page {page} with status {response.status_code}: {response.text[:200]}")
+                # Handle rate limiting and API errors
+                if response.status_code == 429:
+                    # Rate limit exceeded - stop immediately
+                    error_data = {}
+                    try:
+                        error_data = response.json()
+                    except:
+                        pass
+                    
+                    error_msg = error_data.get('display', 'Usage limits exceeded')
+                    logger.error(f"❌ Adzuna API rate limit exceeded (429): {error_msg}")
+                    logger.error(f"   Please wait until the daily limit resets or contact Adzuna support for higher limits")
+                    logger.error(f"   Collected {len(jobs)} jobs before hitting the limit")
+                    break
+                elif response.status_code == 401:
+                    # Authentication failed
+                    logger.error(f"❌ Adzuna API authentication failed (401): Invalid credentials")
+                    logger.error(f"   Please check ADZUNA_APP_ID and ADZUNA_APP_KEY environment variables")
+                    break
+                elif response.status_code != 200:
+                    # Other errors
+                    error_text = response.text[:200] if response.text else "Unknown error"
+                    logger.warning(f"⚠️ Adzuna API request failed for page {page} with status {response.status_code}: {error_text}")
+                    # For non-critical errors, try to continue but log the issue
+                    if response.status_code >= 500:
+                        # Server errors - might be temporary, try next page
+                        logger.warning(f"   Server error detected, will try next page...")
+                        page += 1
+                        import time
+                        time.sleep(2)  # Wait longer for server errors
+                        continue
+                    else:
+                        # Client errors - likely permanent, stop
+                        break
+                
+                # Only parse JSON if we got a successful response
+                try:
+                    data = response.json()
+                except Exception as e:
+                    logger.error(f"Failed to parse JSON response: {e}")
                     break
                 
-                data = response.json()
                 results = data.get('results', [])
                 
                 if not results:
@@ -161,11 +201,15 @@ class APICollector:
                 
                 page += 1
                 
-                # Add a small delay to avoid rate limiting
+                # Add delay between requests to avoid rate limiting
+                # Increased to 1.5 seconds to be more conservative with free tier limits
                 import time
-                time.sleep(0.5)
+                time.sleep(1.5)
             
-            logger.info(f"Completed collecting from Adzuna API. Total jobs collected: {len(jobs)}")
+            if len(jobs) > 0:
+                logger.info(f"✅ Completed collecting from Adzuna API. Total jobs collected: {len(jobs)}")
+            else:
+                logger.warning(f"⚠️ No jobs collected from Adzuna API. Check API credentials and rate limits.")
                 
         except Exception as e:
             logger.error(f"Adzuna API collection failed: {e}")

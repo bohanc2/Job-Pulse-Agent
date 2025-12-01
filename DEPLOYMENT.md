@@ -1,240 +1,243 @@
-# Render 部署指南
+# Render Deployment Guide
 
-本指南將幫助您將 Ascendo AI Community Jobs 部署到 Render.com。
+This guide will help you deploy Ascendo AI Community Jobs to Render.com.
 
-## 部署前準備
+## Pre-Deployment Preparation
 
-### 1. 確保所有文件已準備
+### 1. Ensure All Files Are Ready
 
-✅ 已創建的文件：
-- `Procfile` - Render 啟動命令
-- `runtime.txt` - Python 版本指定
-- `requirements.txt` - 已包含 gunicorn 和 psycopg2-binary
-- `models/database.py` - 已支持 PostgreSQL
-- `app.py` - 已支持生產環境配置
+✅ Files that should be created:
+- `Procfile` - Render startup command
+- `runtime.txt` - Python version specification
+- `requirements.txt` - Includes gunicorn and psycopg2-binary
+- `models/database.py` - Supports PostgreSQL
+- `app.py` - Supports production environment configuration
 
-### 2. 準備 Git 倉庫
+### 2. Prepare Git Repository
 
 ```bash
-# 初始化 Git（如果還沒有）
+# Initialize Git (if not already done)
 git init
 
-# 確保 .gitignore 包含以下內容
+# Ensure .gitignore contains the following
 # .env
 # __pycache__/
 # *.db
 # *.pyc
 
-# 提交所有文件
+# Commit all files
 git add .
 git commit -m "Prepare for Render deployment"
 
-# 推送到 GitHub
+# Push to GitHub
 git remote add origin https://github.com/yourusername/ascendo-jobs.git
 git branch -M main
 git push -u origin main
 ```
 
-## Render 部署步驟
+## Render Deployment Steps
 
-### 步驟 1: 創建 Render 帳號
+### Step 1: Create Render Account
 
-1. 訪問 https://render.com
-2. 使用 GitHub 帳號登錄（推薦）
-3. 授權 Render 訪問您的 GitHub 倉庫
+1. Visit https://render.com
+2. Sign in with your GitHub account (recommended)
+3. Authorize Render to access your GitHub repositories
 
-### 步驟 2: 創建 PostgreSQL 數據庫
+### Step 2: Create PostgreSQL Database
 
-1. 在 Render Dashboard，點擊 **"New +"**
-2. 選擇 **"PostgreSQL"**
-3. 配置：
-   - **Name**: `ascendo-db`（或您喜歡的名稱）
-   - **Database**: `ascendo`（可選，使用默認也可以）
-   - **User**: 自動生成
-   - **Region**: 選擇離您最近的區域
-   - **Plan**: Free（或選擇付費計劃）
-4. 點擊 **"Create Database"**
-5. 記下數據庫的連接信息（但通常不需要手動配置，Render 會自動處理）
+1. In Render Dashboard, click **"New +"**
+2. Select **"PostgreSQL"**
+3. Configure:
+   - **Name**: `ascendo-db` (or your preferred name)
+   - **Database**: `ascendo` (optional, default is fine)
+   - **User**: Auto-generated
+   - **Region**: Choose the region closest to you
+   - **Plan**: Free (or choose a paid plan)
+4. Click **"Create Database"**
+5. Note the database connection information (usually not needed manually, Render handles it automatically)
 
-### 步驟 3: 創建 Web Service
+### Step 3: Create Web Service
 
-1. 在 Render Dashboard，點擊 **"New +"**
-2. 選擇 **"Web Service"**
-3. 連接您的 GitHub 倉庫：
-   - 如果已授權，選擇您的倉庫
-   - 如果沒有，點擊 "Connect GitHub" 並授權
-4. 選擇 `Ascendo` 倉庫
-5. 配置服務：
+1. In Render Dashboard, click **"New +"**
+2. Select **"Web Service"**
+3. Connect your GitHub repository:
+   - If already authorized, select your repository
+   - If not, click "Connect GitHub" and authorize
+4. Select the `Ascendo` repository
+5. Configure the service:
 
-   **基本設置：**
-   - **Name**: `ascendo-jobs`（或您喜歡的名稱）
-   - **Region**: 選擇與數據庫相同的區域（推薦）
-   - **Branch**: `main`（或您的主分支）
-   - **Root Directory**: 留空（如果項目在根目錄）
+   **Basic Settings:**
+   - **Name**: `ascendo-jobs` (or your preferred name)
+   - **Region**: Choose the same region as the database (recommended)
+   - **Branch**: `main` (or your main branch)
+   - **Root Directory**: Leave empty (if project is in root directory)
 
-   **構建和啟動：**
+   **Build & Start:**
    - **Environment**: `Python 3`
    - **Build Command**: `pip install -r requirements.txt`
    - **Start Command**: `gunicorn app:app --bind 0.0.0.0:$PORT`
 
-   **計劃：**
-   - **Plan**: Free（或選擇付費計劃）
+   **Plan:**
+   - **Plan**: Free (or choose a paid plan)
 
-### 步驟 4: 配置環境變量
+### Step 4: Configure Environment Variables
 
-在 Web Service 的設置頁面，找到 **"Environment"** 部分，添加以下變量：
+In the Web Service settings page, find the **"Environment"** section and add the following variables:
 
 ```
 ADZUNA_APP_ID=your_adzuna_app_id
 ADZUNA_APP_KEY=your_adzuna_app_key
-OPENAI_API_KEY=your_openai_key (可選)
+OPENAI_API_KEY=your_openai_key (optional)
 FLASK_ENV=production
+ADZUNA_MAX_PAGES=10 (optional, default is 10 pages, 50 jobs per page)
 ```
 
-**重要**: `DATABASE_URL` 會自動從 PostgreSQL 服務提供，無需手動添加。
+**Important**: 
+- `DATABASE_URL` is automatically provided from the PostgreSQL service, no need to add manually
+- `ADZUNA_MAX_PAGES`: Limits the maximum number of pages per collection to avoid exceeding Adzuna API daily request limits (free tier has daily limits)
 
-### 步驟 5: 鏈接數據庫
+### Step 5: Link Database
 
-1. 在 Web Service 設置頁面，找到 **"Connections"** 部分
-2. 點擊 **"Link Database"**
-3. 選擇您創建的 PostgreSQL 數據庫
-4. Render 會自動將 `DATABASE_URL` 添加到環境變量中
+1. In Web Service settings page, find the **"Connections"** section
+2. Click **"Link Database"**
+3. Select your created PostgreSQL database
+4. Render will automatically add `DATABASE_URL` to environment variables
 
-### 步驟 6: 部署
+### Step 6: Deploy
 
-1. 點擊 **"Create Web Service"**
-2. Render 會開始構建和部署：
-   - 克隆倉庫
-   - 安裝依賴（約 2-3 分鐘）
-   - 構建應用
-   - 啟動服務
-3. 等待部署完成（通常 3-5 分鐘）
-4. 部署成功後，您會看到綠色的 "Live" 狀態
+1. Click **"Create Web Service"**
+2. Render will start building and deploying:
+   - Clone repository
+   - Install dependencies (approximately 2-3 minutes)
+   - Build application
+   - Start service
+3. Wait for deployment to complete (usually 3-5 minutes)
+4. After successful deployment, you will see a green "Live" status
 
-### 步驟 7: 訪問應用
+### Step 7: Access Application
 
-部署完成後，您的應用將在以下 URL 可用：
+After deployment, your application will be available at:
 ```
 https://your-service-name.onrender.com
 ```
 
-## 部署後操作
+## Post-Deployment Operations
 
-### 1. 驗證部署
+### 1. Verify Deployment
 
-1. 訪問您的應用 URL
-2. 檢查頁面是否正常加載
-3. 檢查 Admin Settings 是否可以訪問
-4. 查看 Render Dashboard → Logs 確認沒有錯誤
+1. Visit your application URL
+2. Check if the page loads normally
+3. Check if Admin Settings is accessible
+4. View Render Dashboard → Logs to confirm there are no errors
 
-### 2. 首次數據收集
+### 2. Initial Data Collection
 
-- 應用啟動後，調度器會自動開始工作
-- 首次收集可能需要 10-30 分鐘
-- 可以通過 Admin Settings → "🔄 Refresh Now" 手動觸發
+- After application starts, the scheduler will automatically begin working
+- Initial collection may take 10-30 minutes
+- Can be manually triggered via Admin Settings → "🔄 Refresh Now"
 
-### 3. 監控和日誌
+### 3. Monitoring and Logs
 
-- **日誌**: Render Dashboard → Your Service → Logs
-- **指標**: Render Dashboard → Your Service → Metrics
-- **事件**: Render Dashboard → Your Service → Events
+- **Logs**: Render Dashboard → Your Service → Logs
+- **Metrics**: Render Dashboard → Your Service → Metrics
+- **Events**: Render Dashboard → Your Service → Events
 
-## 常見問題
+## Common Issues
 
-### Q: 部署失敗，構建錯誤
-**A**: 檢查：
-- `Procfile` 是否存在且格式正確
-- `requirements.txt` 是否包含所有依賴
-- Python 版本是否正確（runtime.txt）
-- 查看構建日誌中的具體錯誤信息
+### Q: Deployment fails, build error
+**A**: Check:
+- Whether `Procfile` exists and format is correct
+- Whether `requirements.txt` includes all dependencies
+- Whether Python version is correct (runtime.txt)
+- View specific error messages in build logs
 
-### Q: 應用啟動後立即崩潰
-**A**: 檢查：
-- 所有環境變量是否已設置
-- `DATABASE_URL` 是否正確（應該自動提供）
-- 查看應用日誌中的錯誤信息
+### Q: Application crashes immediately after startup
+**A**: Check:
+- Whether all environment variables are set
+- Whether `DATABASE_URL` is correct (should be automatically provided)
+- View error messages in application logs
 
-### Q: 數據庫連接失敗
-**A**: 檢查：
-- PostgreSQL 服務是否已創建並運行
-- Web Service 是否已鏈接到數據庫
-- `DATABASE_URL` 環境變量是否存在
+### Q: Database connection fails
+**A**: Check:
+- Whether PostgreSQL service is created and running
+- Whether Web Service is linked to the database
+- Whether `DATABASE_URL` environment variable exists
 
-### Q: 免費層服務休眠
+### Q: Free tier service hibernation
 **A**: 
-- Render 免費層在 15 分鐘不活動後會休眠
-- 首次訪問休眠的服務需要 30-60 秒喚醒
-- 考慮使用付費計劃以保持服務始終運行
-- 或使用外部服務定期 ping 您的 URL 以保持活躍
+- Render free tier hibernates after 15 minutes of inactivity
+- First access to a hibernated service takes 30-60 seconds to wake up
+- Consider using a paid plan to keep the service always running
+- Or use an external service to periodically ping your URL to keep it active
 
-## 升級到付費計劃
+## Upgrade to Paid Plan
 
-如果需要：
-- 始終在線的服務（無休眠）
-- 更快的響應時間
-- 更多資源
-- 優先支持
+If you need:
+- Always-on service (no hibernation)
+- Faster response times
+- More resources
+- Priority support
 
-可以升級到 Render 的付費計劃（$7/月起）。
+You can upgrade to Render's paid plan (starting at $7/month).
 
-## 自定義域名
+## Custom Domain
 
-1. 在 Web Service 設置中，找到 **"Custom Domains"**
-2. 點擊 **"Add Custom Domain"**
-3. 輸入您的域名
-4. 按照指示配置 DNS 記錄
-5. Render 會自動提供 SSL 證書
+1. In Web Service settings, find **"Custom Domains"**
+2. Click **"Add Custom Domain"**
+3. Enter your domain name
+4. Follow the instructions to configure DNS records
+5. Render will automatically provide SSL certificate
 
-## 備份數據庫
+## Database Backup
 
-1. 在 PostgreSQL 服務設置中
-2. 找到 **"Backups"** 部分
-3. 可以手動創建備份或設置自動備份
-4. 付費計劃包含自動每日備份
+1. In PostgreSQL service settings
+2. Find the **"Backups"** section
+3. You can manually create backups or set up automatic backups
+4. Paid plans include automatic daily backups
 
-## 更新應用
+## Update Application
 
-當您推送新代碼到 GitHub 時：
-1. Render 會自動檢測更改
-2. 自動觸發新的部署
-3. 零停機時間部署（藍綠部署）
+When you push new code to GitHub:
+1. Render will automatically detect changes
+2. Automatically trigger new deployment
+3. Zero-downtime deployment (blue-green deployment)
 
-## 回滾部署
+## Rollback Deployment
 
-如果需要回滾到之前的版本：
-1. 在 Render Dashboard → Your Service → Events
-2. 找到之前的成功部署
-3. 點擊 "Redeploy"
+If you need to rollback to a previous version:
+1. In Render Dashboard → Your Service → Events
+2. Find the previous successful deployment
+3. Click "Redeploy"
 
-## 成本估算
+## Cost Estimation
 
-### 免費層
-- Web Service: 免費（有休眠限制）
-- PostgreSQL: 免費（90 天後需要升級或導出數據）
-- 總計: $0/月
+### Free Tier
+- Web Service: Free (with hibernation limitations)
+- PostgreSQL: Free (requires upgrade or data export after 90 days)
+- Total: $0/month
 
-### 入門計劃
-- Web Service: $7/月
-- PostgreSQL: $0/月（免費層可用）
-- 總計: $7/月
+### Starter Plan
+- Web Service: $7/month
+- PostgreSQL: $0/month (free tier available)
+- Total: $7/month
 
-## 安全建議
+## Security Recommendations
 
-1. **環境變量**: 永遠不要將 API 密鑰提交到 Git
-2. **數據庫**: 使用強密碼（Render 自動生成）
-3. **HTTPS**: Render 自動提供 SSL 證書
-4. **備份**: 定期備份數據庫
-5. **監控**: 定期檢查日誌和指標
+1. **Environment Variables**: Never commit API keys to Git
+2. **Database**: Use strong passwords (Render auto-generates)
+3. **HTTPS**: Render automatically provides SSL certificates
+4. **Backup**: Regularly backup database
+5. **Monitoring**: Regularly check logs and metrics
 
-## 支持
+## Support
 
-如果遇到問題：
-1. 查看 Render 文檔: https://render.com/docs
-2. 檢查應用日誌
-3. 查看 Render 社區論壇
-4. 聯繫 Render 支持（付費用戶）
+If you encounter issues:
+1. Check Render documentation: https://render.com/docs
+2. Check application logs
+3. View Render community forum
+4. Contact Render support (paid users)
 
 ---
 
-**部署完成後，您的應用將可以通過互聯網訪問，無需用戶自行安裝！**
+**After deployment, your application will be accessible via the internet without requiring users to install anything themselves!**
 
