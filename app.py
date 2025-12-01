@@ -24,6 +24,30 @@ collector_manager = CollectorManager()
 scheduler = SchedulerManager(collector_manager)
 ai_service = AIService(os.getenv('OPENAI_API_KEY'))
 
+# Auto-initialize default data source if none exists and Adzuna credentials are available
+def initialize_default_source():
+    """Initialize default Adzuna API source if no sources exist"""
+    sources = get_job_sources()
+    if len(sources) == 0:
+        # Check if Adzuna credentials are available
+        adzuna_app_id = os.getenv('ADZUNA_APP_ID')
+        adzuna_app_key = os.getenv('ADZUNA_APP_KEY')
+        
+        if adzuna_app_id and adzuna_app_key:
+            try:
+                # Create a default Adzuna API source to fetch all jobs
+                print("No data sources found. Creating default Adzuna API source...")
+                add_job_source('api', 'all', 'Adzuna - All Jobs')
+                print("Default Adzuna API source created successfully")
+            except Exception as e:
+                print(f"Warning: Could not create default data source: {e}")
+        else:
+            print("Warning: No data sources found and Adzuna credentials not configured.")
+            print("Please add data sources via Admin Settings or set ADZUNA_APP_ID and ADZUNA_APP_KEY environment variables.")
+
+# Initialize default source on startup
+initialize_default_source()
+
 # Start scheduler for production (gunicorn) environment
 # Check if we're running under gunicorn (production) or directly (development)
 # In production, gunicorn will import this module, so we need to start scheduler here
@@ -33,6 +57,28 @@ if not scheduler.scheduler.running:
     try:
         scheduler.start()
         print("Scheduler started")
+        
+        # Trigger initial data collection in production after a short delay
+        # This ensures the database is ready and scheduler is running
+        import threading
+        import time
+        
+        def delayed_initial_collection():
+            """Trigger initial collection after 10 seconds to allow app to fully start"""
+            time.sleep(10)
+            sources = get_job_sources()
+            if len(sources) > 0:
+                print("Starting initial data collection from configured sources...")
+                try:
+                    collector_manager.collect_all()
+                    print("Initial data collection completed")
+                except Exception as e:
+                    print(f"Initial data collection failed: {e}")
+        
+        # Start initial collection in background thread (only in production)
+        if os.getenv('FLASK_ENV') == 'production':
+            thread = threading.Thread(target=delayed_initial_collection, daemon=True)
+            thread.start()
     except Exception as e:
         print(f"Warning: Could not start scheduler: {e}")
 
