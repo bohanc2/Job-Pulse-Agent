@@ -99,10 +99,25 @@ class APICollector:
                 search_query = search_query_or_url.strip() if search_query_or_url else ''
                 base_url = f"https://api.adzuna.com/v1/api/jobs/{country}/search"
             
-            # Limit pages to avoid exceeding daily API limits
-            # Adzuna free tier has daily request limits, so we limit to first 10 pages (500 jobs)
-            # This can be overridden with ADZUNA_MAX_PAGES environment variable
-            max_pages = int(os.getenv('ADZUNA_MAX_PAGES', '10'))  # Default: 10 pages = 500 jobs
+            # Check if API limit was reached today
+            from models.database import get_refresh_status
+            refresh_status = get_refresh_status()
+            api_limit_reached = refresh_status.get('api_limit_reached', False)
+            
+            if api_limit_reached:
+                logger.warning("⚠️ API limit was reached today. Skipping collection. Will resume tomorrow.")
+                return jobs
+            
+            # Smart collection: collect until limit or max pages
+            # If ADZUNA_MAX_PAGES is set, use it as a safety limit
+            # Otherwise, try to collect as much as possible until hitting the limit
+            max_pages_env = os.getenv('ADZUNA_MAX_PAGES', '')
+            if max_pages_env:
+                max_pages = int(max_pages_env)
+            else:
+                # No limit set, try to collect until API limit (safety limit: 100 pages = 5000 jobs)
+                max_pages = 100
+            
             page = 1
             results_per_page = 50
             
@@ -121,7 +136,7 @@ class APICollector:
                 
                 # Handle rate limiting and API errors
                 if response.status_code == 429:
-                    # Rate limit exceeded - stop immediately
+                    # Rate limit exceeded - stop immediately and mark limit reached
                     error_data = {}
                     try:
                         error_data = response.json()
@@ -129,9 +144,14 @@ class APICollector:
                         pass
                     
                     error_msg = error_data.get('display', 'Usage limits exceeded')
-                    logger.error(f"❌ Adzuna API rate limit exceeded (429): {error_msg}")
-                    logger.error(f"   Please wait until the daily limit resets or contact Adzuna support for higher limits")
-                    logger.error(f"   Collected {len(jobs)} jobs before hitting the limit")
+                    logger.warning(f"⚠️ Adzuna API daily limit reached (429): {error_msg}")
+                    logger.info(f"   Successfully collected {len(jobs)} jobs before hitting the limit")
+                    logger.info(f"   Collection will automatically resume tomorrow")
+                    
+                    # Mark API limit as reached in database
+                    from models.database import update_refresh_status
+                    update_refresh_status(api_limit_reached=True)
+                    
                     break
                 elif response.status_code == 401:
                     # Authentication failed

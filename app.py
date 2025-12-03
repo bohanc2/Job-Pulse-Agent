@@ -39,10 +39,19 @@ def initialize_default_source():
         
         if adzuna_app_id and adzuna_app_key:
             try:
-                # Create a default Adzuna API source to fetch all jobs
-                print("No data sources found. Creating default Adzuna API source...")
-                add_job_source('api', 'all', 'Adzuna - All Jobs')
-                print("Default Adzuna API source created successfully")
+                # Check if keyword rotation is enabled
+                use_keyword_rotation = os.getenv('ADZUNA_USE_KEYWORD_ROTATION', 'true').lower() == 'true'
+                
+                if use_keyword_rotation:
+                    # Create a single "all" source - scheduler will handle keyword rotation
+                    print("No data sources found. Creating default Adzuna API source with keyword rotation enabled...")
+                    add_job_source('api', 'all', 'Adzuna - All Jobs (Keyword Rotation)')
+                    print("Default Adzuna API source created successfully with keyword rotation")
+                else:
+                    # Create a default Adzuna API source to fetch all jobs
+                    print("No data sources found. Creating default Adzuna API source...")
+                    add_job_source('api', 'all', 'Adzuna - All Jobs')
+                    print("Default Adzuna API source created successfully")
                 return True
             except Exception as e:
                 print(f"Warning: Could not create default data source: {e}")

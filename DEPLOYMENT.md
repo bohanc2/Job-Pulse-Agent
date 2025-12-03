@@ -90,11 +90,15 @@ ADZUNA_APP_KEY=your_adzuna_app_key
 OPENAI_API_KEY=your_openai_key (optional)
 FLASK_ENV=production
 ADZUNA_MAX_PAGES=10 (optional, default is 10 pages, 50 jobs per page)
+ADZUNA_USE_KEYWORD_ROTATION=true (optional, default is true)
+ADZUNA_KEYWORDS=software engineer,data scientist,product manager,marketing,sales (optional)
 ```
 
 **Important**: 
 - `DATABASE_URL` is automatically provided from the PostgreSQL service, no need to add manually
 - `ADZUNA_MAX_PAGES`: Limits the maximum number of pages per collection to avoid exceeding Adzuna API daily request limits (free tier has daily limits)
+- `ADZUNA_USE_KEYWORD_ROTATION`: When enabled (default), the scheduler will rotate through different keywords each hour to collect more diverse jobs without exceeding API limits
+- `ADZUNA_KEYWORDS`: Comma-separated list of keywords to rotate through. If not set, uses default keywords covering various job categories
 
 ### Step 5: Link Database
 
@@ -135,6 +139,13 @@ https://your-service-name.onrender.com
 - After application starts, the scheduler will automatically begin working
 - Initial collection may take 10-30 minutes
 - Can be manually triggered via Admin Settings → "🔄 Refresh Now"
+
+**Smart Keyword Rotation (Recommended)**:
+- By default, the scheduler uses keyword rotation to collect more diverse jobs
+- Each hour, it collects jobs for a different keyword (e.g., "software engineer", "data scientist", etc.)
+- This allows you to collect thousands of jobs over time without exceeding daily API limits
+- Example: With 10 keywords and 10 pages each, you can collect 5,000 unique jobs over 10 hours
+- Customize keywords via `ADZUNA_KEYWORDS` environment variable
 
 ### 3. Monitoring and Logs
 

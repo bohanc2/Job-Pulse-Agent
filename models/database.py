@@ -46,6 +46,8 @@ class RefreshStatus(Base):
     last_refresh = Column(DateTime, default=datetime.utcnow)
     jobs_count = Column(Integer, default=0)
     sources_count = Column(Integer, default=0)
+    api_limit_reached = Column(Boolean, default=False)  # Track if API limit was reached
+    api_limit_date = Column(DateTime)  # Date when limit was reached (for daily reset)
 
 # Database initialization
 # Support both SQLite (development) and PostgreSQL (production)
@@ -367,18 +369,33 @@ def get_refresh_status():
     try:
         status = session.query(RefreshStatus).first()
         companies_count = get_unique_companies_count()
+        
+        # Check if API limit should be reset (new day)
+        if status and status.api_limit_reached and status.api_limit_date:
+            limit_date = status.api_limit_date.date()
+            today = datetime.utcnow().date()
+            if limit_date < today:
+                # New day, reset the limit
+                status.api_limit_reached = False
+                status.api_limit_date = None
+                session.commit()
+        
         if status:
             return {
                 'last_refresh': status.last_refresh.isoformat() if status.last_refresh else None,
                 'jobs_count': status.jobs_count,
                 'sources_count': status.sources_count,
-                'companies_count': companies_count
+                'companies_count': companies_count,
+                'api_limit_reached': status.api_limit_reached if status else False,
+                'api_limit_date': status.api_limit_date.isoformat() if status and status.api_limit_date else None
             }
         return {
             'last_refresh': None,
             'jobs_count': 0,
             'sources_count': 0,
-            'companies_count': companies_count
+            'companies_count': companies_count,
+            'api_limit_reached': False,
+            'api_limit_date': None
         }
     finally:
         session.close()

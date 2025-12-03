@@ -79,7 +79,8 @@ class CollectorManager:
             )
             total_collected += len(jobs)
         
-        # Update refresh status
+        # Update refresh status (check if any source hit API limit)
+        # The API collector will have already updated the status if limit was reached
         update_refresh_status()
         logger.info(f"Data collection completed, collected {total_collected} jobs in total")
         return total_collected

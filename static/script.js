@@ -126,6 +126,26 @@ async function loadRefreshStatus() {
             companiesCount.textContent = data.companies_count || 0;
         }
         
+        // Show/hide API limit notice
+        const apiLimitNotice = document.getElementById('api-limit-notice');
+        if (apiLimitNotice) {
+            if (data.api_limit_reached) {
+                apiLimitNotice.style.display = 'flex';
+                // Update notice text with date if available
+                if (data.api_limit_date) {
+                    const limitDate = new Date(data.api_limit_date);
+                    const tomorrow = new Date(limitDate);
+                    tomorrow.setDate(tomorrow.getDate() + 1);
+                    const noticeText = apiLimitNotice.querySelector('.notice-text');
+                    if (noticeText) {
+                        noticeText.textContent = `Daily API limit reached today. Collection will automatically resume tomorrow (${tomorrow.toLocaleDateString()}).`;
+                    }
+                }
+            } else {
+                apiLimitNotice.style.display = 'none';
+            }
+        }
+        
         // Update admin panel status
         const lastRefresh = document.getElementById('last-refresh');
         if (lastRefresh) {
