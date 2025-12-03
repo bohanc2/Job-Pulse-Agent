@@ -173,17 +173,113 @@ def get_jobs(page=1, per_page=20, search='', location='', level='', pay=''):
     try:
         query = session.query(Job).filter(Job.is_active == True)
         
-        # Search in title, company, description
+        # Search in title, company, description with whole word matching
         if search:
-            query = query.filter(
-                (Job.title.contains(search)) |
-                (Job.company.contains(search)) |
-                (Job.description.contains(search))
-            )
+            # Split search terms and match each as whole word
+            search_terms = search.strip().split()
+            db_url = os.getenv('DATABASE_URL', '')
+            is_postgresql = db_url and ('postgresql' in db_url or 'postgres' in db_url)
+            
+            from sqlalchemy import text
+            
+            search_conditions = []
+            for term in search_terms:
+                if not term:
+                    continue
+                term_lower = term.lower()
+                
+                if is_postgresql:
+                    # PostgreSQL: Use regex word boundary \y for whole word matching
+                    # \y matches word boundaries (start/end of word)
+                    # Escape special regex characters in the search term
+                    import re
+                    term_escaped = re.escape(term_lower)
+                    regex_pattern = f'\\y{term_escaped}\\y'
+                    search_conditions.append(
+                        (Job.title.op('~*')(regex_pattern)) |
+                        (Job.company.op('~*')(regex_pattern)) |
+                        (Job.description.op('~*')(regex_pattern))
+                    )
+                else:
+                    # SQLite: Use LIKE with word boundaries
+                    # Match whole word by checking for word boundaries (space, punctuation, start, end)
+                    # Escape special LIKE characters in the search term
+                    term_escaped = term_lower.replace('%', '\\%').replace('_', '\\_')
+                    
+                    # Patterns to match whole word:
+                    # 1. Word at start of string
+                    # 2. Word at end of string  
+                    # 3. Word with space before and after
+                    # 4. Word with space before and punctuation/end after
+                    # 5. Word with punctuation/start before and space after
+                    # 6. Exact match (single word)
+                    start_pattern = f'{term_escaped} %'
+                    end_pattern = f'% {term_escaped}'
+                    middle_pattern = f'% {term_escaped} %'
+                    exact_pattern = term_escaped
+                    
+                    # Also match with common punctuation as word boundaries
+                    punct_before = f'%[{term_escaped}]%'  # Word after punctuation
+                    punct_after = f'%[{term_escaped}]%'   # Word before punctuation
+                    
+                    search_conditions.append(
+                        (Job.title.ilike(start_pattern)) |
+                        (Job.title.ilike(end_pattern)) |
+                        (Job.title.ilike(middle_pattern)) |
+                        (Job.title.ilike(exact_pattern)) |
+                        (Job.company.ilike(start_pattern)) |
+                        (Job.company.ilike(end_pattern)) |
+                        (Job.company.ilike(middle_pattern)) |
+                        (Job.company.ilike(exact_pattern)) |
+                        (Job.description.ilike(start_pattern)) |
+                        (Job.description.ilike(end_pattern)) |
+                        (Job.description.ilike(middle_pattern)) |
+                        (Job.description.ilike(exact_pattern))
+                    )
+            
+            # All search terms must be present (AND condition)
+            if search_conditions:
+                from sqlalchemy import and_
+                query = query.filter(and_(*search_conditions))
         
-        # Search in location field separately
+        # Search in location field separately with whole word matching
         if location:
-            query = query.filter(Job.location.contains(location))
+            location_terms = location.strip().split()
+            db_url = os.getenv('DATABASE_URL', '')
+            is_postgresql = db_url and ('postgresql' in db_url or 'postgres' in db_url)
+            
+            location_conditions = []
+            for term in location_terms:
+                if not term:
+                    continue
+                term_lower = term.lower()
+                
+                if is_postgresql:
+                    # PostgreSQL: Use regex word boundary
+                    import re
+                    term_escaped = re.escape(term_lower)
+                    regex_pattern = f'\\y{term_escaped}\\y'
+                    location_conditions.append(Job.location.op('~*')(regex_pattern))
+                else:
+                    # SQLite: Use LIKE with word boundaries
+                    term_escaped = term_lower.replace('%', '\\%').replace('_', '\\_')
+                    
+                    start_pattern = f'{term_escaped} %'
+                    end_pattern = f'% {term_escaped}'
+                    middle_pattern = f'% {term_escaped} %'
+                    exact_pattern = term_escaped
+                    
+                    location_conditions.append(
+                        (Job.location.ilike(start_pattern)) |
+                        (Job.location.ilike(end_pattern)) |
+                        (Job.location.ilike(middle_pattern)) |
+                        (Job.location.ilike(exact_pattern))
+                    )
+            
+            # All location terms must be present (AND condition)
+            if location_conditions:
+                from sqlalchemy import and_
+                query = query.filter(and_(*location_conditions))
         
         if level:
             if level == 'entry':
