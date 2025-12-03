@@ -8,7 +8,7 @@ from flask_cors import CORS
 from datetime import datetime, timedelta
 import os
 from dotenv import load_dotenv
-from models.database import init_db, get_jobs, add_job_source, get_job_sources, get_refresh_status, delete_job_source
+from models.database import init_db, get_jobs, add_job_source, get_job_sources, get_refresh_status, delete_job_source, cleanup_duplicate_jobs, update_refresh_status
 from data_collectors.collector_manager import CollectorManager
 from scheduler import SchedulerManager
 from ai_service import AIService
@@ -140,13 +140,38 @@ def api_refresh_status():
 
 @app.route('/api/debug/jobs-count')
 def api_debug_jobs_count():
-    """Debug endpoint to check job count in database"""
+    """Debug endpoint to check job count in database and detect duplicates"""
     from models.database import SessionLocal, Job
+    from sqlalchemy import func
     session = SessionLocal()
     try:
         total_jobs = session.query(Job).count()
         active_jobs = session.query(Job).filter(Job.is_active == True).count()
         inactive_jobs = session.query(Job).filter(Job.is_active == False).count()
+        
+        # Check for duplicate URLs (should not happen due to unique constraint, but check anyway)
+        duplicate_urls = session.query(
+            Job.url,
+            func.count(Job.id).label('count')
+        ).filter(
+            Job.is_active == True
+        ).group_by(Job.url).having(func.count(Job.id) > 1).all()
+        
+        # Check for duplicate titles (same title and company)
+        duplicate_titles = session.query(
+            Job.title,
+            Job.company,
+            func.count(Job.id).label('count')
+        ).filter(
+            Job.is_active == True
+        ).group_by(Job.title, Job.company).having(func.count(Job.id) > 1).limit(10).all()
+        
+        # Get unique companies count
+        unique_companies = session.query(func.count(func.distinct(Job.company))).filter(
+            Job.is_active == True,
+            Job.company.isnot(None),
+            Job.company != ''
+        ).scalar()
         
         # Get a sample of jobs
         sample_jobs = session.query(Job).filter(Job.is_active == True).limit(5).all()
@@ -154,6 +179,7 @@ def api_debug_jobs_count():
             'id': j.id,
             'title': j.title[:50] if j.title else None,
             'company': j.company,
+            'url': j.url[:100] if j.url else None,
             'is_active': j.is_active
         } for j in sample_jobs]
         
@@ -161,6 +187,11 @@ def api_debug_jobs_count():
             'total_jobs': total_jobs,
             'active_jobs': active_jobs,
             'inactive_jobs': inactive_jobs,
+            'unique_companies': unique_companies or 0,
+            'duplicate_urls_count': len(duplicate_urls),
+            'duplicate_urls': [{'url': url[:100], 'count': count} for url, count in duplicate_urls[:5]],
+            'duplicate_titles_count': len(duplicate_titles),
+            'duplicate_titles': [{'title': title[:50], 'company': company, 'count': count} for title, company, count in duplicate_titles],
             'sample_jobs': sample
         })
     finally:
@@ -197,13 +228,34 @@ def api_add_source():
 
 @app.route('/api/sources/<int:source_id>', methods=['DELETE'])
 def api_delete_source(source_id):
-    """Delete a data source"""
+    """Delete a data source and all related jobs (hard delete)"""
     try:
         success = delete_job_source(source_id)
         if success:
-            return jsonify({'success': True})
+            # Clean up any remaining duplicates after deletion
+            cleanup_result = cleanup_duplicate_jobs()
+            # Update refresh status to reflect the changes
+            update_refresh_status()
+            return jsonify({
+                'success': True,
+                'cleanup': cleanup_result
+            })
         else:
             return jsonify({'error': 'Source not found'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/cleanup-duplicates', methods=['POST'])
+def api_cleanup_duplicates():
+    """Manually trigger cleanup of duplicate jobs"""
+    try:
+        result = cleanup_duplicate_jobs()
+        # Update refresh status after cleanup
+        update_refresh_status()
+        return jsonify({
+            'success': True,
+            'result': result
+        })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

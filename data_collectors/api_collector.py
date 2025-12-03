@@ -131,7 +131,11 @@ class APICollector:
                 else:
                     api_url = f"{base_url}/{page}?app_id={app_id}&app_key={app_key}&results_per_page={results_per_page}&what={search_query.replace(' ', '%20')}"
                 
-                logger.info(f"Fetching page {page}/{max_pages} from Adzuna API...")
+                # Only log every 10 pages to reduce log noise
+                if page == 1 or page % 10 == 0 or page == max_pages:
+                    query_display = f" (query: '{search_query}')" if search_query and search_query.lower() not in ['all', '*', 'all jobs'] else ""
+                    logger.info(f"Fetching page {page}/{max_pages} from Adzuna API{query_display}...")
+                
                 response = requests.get(api_url, timeout=30)
                 
                 # Handle rate limiting and API errors
@@ -187,7 +191,9 @@ class APICollector:
                     logger.info(f"No more results on page {page}, stopping pagination")
                     break
                 
-                logger.info(f"Page {page}: Adzuna API returned {len(results)} results")
+                # Only log every 10 pages to reduce log noise
+                if page == 1 or page % 10 == 0 or page == max_pages:
+                    logger.info(f"Page {page}: Adzuna API returned {len(results)} results (total collected so far: {len(jobs)})")
                 
                 for item in results:
                     try:

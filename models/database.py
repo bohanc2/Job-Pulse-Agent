@@ -495,12 +495,12 @@ def get_job_sources():
         session.close()
 
 def delete_job_source(source_id):
-    """Delete or deactivate a data source and all related jobs"""
+    """Permanently delete a data source and all related jobs (hard delete)"""
     session = SessionLocal()
     try:
         source = session.query(JobSource).filter(JobSource.id == source_id).first()
         if source:
-            # Deactivate all jobs from this source
+            # Permanently delete all jobs from this source (hard delete)
             # Match by source_name (which can be either name or url based on how it was saved)
             # In collector_manager, source_name is set as: source_name or source_url
             # So we need to match both possibilities
@@ -514,20 +514,19 @@ def delete_job_source(source_id):
             # Also match by source type to be more precise
             related_jobs = session.query(Job).filter(
                 or_(*match_conditions),
-                Job.source == source.type,
-                Job.is_active == True
+                Job.source == source.type
             ).all()
             
-            jobs_deactivated = 0
+            jobs_deleted = 0
             for job in related_jobs:
-                job.is_active = False
-                jobs_deactivated += 1
+                session.delete(job)
+                jobs_deleted += 1
             
-            # Soft delete the source by setting is_active to False
-            source.is_active = False
+            # Permanently delete the source (hard delete)
+            session.delete(source)
             
             session.commit()
-            logger.info(f"Deleted source {source_id} ({source.name or source.url}) and deactivated {jobs_deactivated} related jobs")
+            logger.info(f"Permanently deleted source {source_id} ({source.name or source.url}) and {jobs_deleted} related jobs")
             return True
         return False
     except Exception as e:
@@ -643,3 +642,118 @@ def get_refresh_status():
                 session.close()
             except:
                 pass
+
+def cleanup_duplicate_jobs():
+    """Remove duplicate jobs, keeping the most recent one for each duplicate group"""
+    session = SessionLocal()
+    try:
+        from sqlalchemy import func, text
+        
+        # Strategy 1: Remove duplicates by URL (should not happen due to unique constraint, but handle anyway)
+        # Find duplicate URLs and keep only the most recent one
+        duplicate_urls = session.query(
+            Job.url,
+            func.count(Job.id).label('count'),
+            func.max(Job.id).label('keep_id')
+        ).filter(
+            Job.is_active == True
+        ).group_by(Job.url).having(func.count(Job.id) > 1).all()
+        
+        url_duplicates_deleted = 0
+        for url, count, keep_id in duplicate_urls:
+            # Delete all except the one with the highest ID (most recent)
+            deleted = session.query(Job).filter(
+                Job.url == url,
+                Job.id != keep_id,
+                Job.is_active == True
+            ).delete(synchronize_session=False)
+            url_duplicates_deleted += deleted
+        
+        # Strategy 2: Remove duplicates by title + company combination
+        # Find jobs with same title and company, keep only the most recent one
+        db_url = os.getenv('DATABASE_URL', '')
+        is_postgresql = db_url and ('postgresql' in db_url or 'postgres' in db_url)
+        
+        if is_postgresql:
+            # PostgreSQL: Use window function for efficient duplicate removal
+            duplicate_query = text("""
+                DELETE FROM jobs
+                WHERE id IN (
+                    SELECT id
+                    FROM (
+                        SELECT id,
+                               ROW_NUMBER() OVER (
+                                   PARTITION BY LOWER(TRIM(title)), LOWER(TRIM(company))
+                                   ORDER BY collected_date DESC, id DESC
+                               ) as rn
+                        FROM jobs
+                        WHERE is_active = true
+                          AND title IS NOT NULL
+                          AND company IS NOT NULL
+                          AND title != ''
+                          AND company != ''
+                    ) t
+                    WHERE rn > 1
+                )
+            """)
+            result = session.execute(duplicate_query)
+            title_duplicates_deleted = result.rowcount
+        else:
+            # SQLite: Use subquery approach
+            duplicate_titles = session.query(
+                Job.title,
+                Job.company,
+                func.count(Job.id).label('count'),
+                func.max(Job.collected_date).label('latest_date')
+            ).filter(
+                Job.is_active == True,
+                Job.title.isnot(None),
+                Job.company.isnot(None),
+                Job.title != '',
+                Job.company != ''
+            ).group_by(
+                func.lower(func.trim(Job.title)),
+                func.lower(func.trim(Job.company))
+            ).having(func.count(Job.id) > 1).all()
+            
+            title_duplicates_deleted = 0
+            for title, company, count, latest_date in duplicate_titles:
+                # Find all jobs with this title+company combination
+                duplicates = session.query(Job).filter(
+                    func.lower(func.trim(Job.title)) == func.lower(func.trim(title)),
+                    func.lower(func.trim(Job.company)) == func.lower(func.trim(company)),
+                    Job.is_active == True
+                ).order_by(Job.collected_date.desc(), Job.id.desc()).all()
+                
+                # Keep the first one (most recent), delete the rest
+                if len(duplicates) > 1:
+                    for job in duplicates[1:]:
+                        session.delete(job)
+                        title_duplicates_deleted += 1
+        
+        # Strategy 3: Remove inactive jobs older than 30 days (optional cleanup)
+        from datetime import timedelta
+        cutoff_date = datetime.utcnow() - timedelta(days=30)
+        old_inactive_deleted = session.query(Job).filter(
+            Job.is_active == False,
+            Job.collected_date < cutoff_date
+        ).delete(synchronize_session=False)
+        
+        session.commit()
+        
+        total_deleted = url_duplicates_deleted + title_duplicates_deleted + old_inactive_deleted
+        
+        logger.info(f"Cleanup completed: {url_duplicates_deleted} URL duplicates, {title_duplicates_deleted} title+company duplicates, {old_inactive_deleted} old inactive jobs deleted (total: {total_deleted})")
+        
+        return {
+            'url_duplicates_deleted': url_duplicates_deleted,
+            'title_duplicates_deleted': title_duplicates_deleted,
+            'old_inactive_deleted': old_inactive_deleted,
+            'total_deleted': total_deleted
+        }
+    except Exception as e:
+        session.rollback()
+        logger.error(f"Error cleaning up duplicate jobs: {e}")
+        raise e
+    finally:
+        session.close()
