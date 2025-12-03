@@ -129,6 +129,34 @@ def api_refresh_status():
     status = get_refresh_status()
     return jsonify(status)
 
+@app.route('/api/debug/jobs-count')
+def api_debug_jobs_count():
+    """Debug endpoint to check job count in database"""
+    from models.database import SessionLocal, Job
+    session = SessionLocal()
+    try:
+        total_jobs = session.query(Job).count()
+        active_jobs = session.query(Job).filter(Job.is_active == True).count()
+        inactive_jobs = session.query(Job).filter(Job.is_active == False).count()
+        
+        # Get a sample of jobs
+        sample_jobs = session.query(Job).filter(Job.is_active == True).limit(5).all()
+        sample = [{
+            'id': j.id,
+            'title': j.title[:50] if j.title else None,
+            'company': j.company,
+            'is_active': j.is_active
+        } for j in sample_jobs]
+        
+        return jsonify({
+            'total_jobs': total_jobs,
+            'active_jobs': active_jobs,
+            'inactive_jobs': inactive_jobs,
+            'sample_jobs': sample
+        })
+    finally:
+        session.close()
+
 @app.route('/api/sources', methods=['GET'])
 def api_get_sources():
     """Get all data sources"""

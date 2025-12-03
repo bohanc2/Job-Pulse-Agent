@@ -261,6 +261,7 @@ def add_job(title, company, location, description, url, source, source_name, lev
                     existing.posted_date = posted_date
             existing.is_active = True
             existing.collected_date = datetime.utcnow()  # Update collection timestamp
+            session.commit()
             return 'updated'
         else:
             # Create new record
@@ -276,8 +277,8 @@ def add_job(title, company, location, description, url, source, source_name, lev
                 posted_date=posted_date
             )
             session.add(job)
+            session.commit()
             return 'created'
-        session.commit()
     except Exception as e:
         session.rollback()
         raise e
