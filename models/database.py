@@ -7,6 +7,9 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 Base = declarative_base()
 
@@ -492,18 +495,44 @@ def get_job_sources():
         session.close()
 
 def delete_job_source(source_id):
-    """Delete or deactivate a data source"""
+    """Delete or deactivate a data source and all related jobs"""
     session = SessionLocal()
     try:
         source = session.query(JobSource).filter(JobSource.id == source_id).first()
         if source:
-            # Soft delete by setting is_active to False
+            # Deactivate all jobs from this source
+            # Match by source_name (which can be either name or url based on how it was saved)
+            # In collector_manager, source_name is set as: source_name or source_url
+            # So we need to match both possibilities
+            
+            # Build matching conditions: match by name if exists, or by url
+            match_conditions = []
+            if source.name:
+                match_conditions.append(Job.source_name == source.name)
+            match_conditions.append(Job.source_name == source.url)
+            
+            # Also match by source type to be more precise
+            related_jobs = session.query(Job).filter(
+                or_(*match_conditions),
+                Job.source == source.type,
+                Job.is_active == True
+            ).all()
+            
+            jobs_deactivated = 0
+            for job in related_jobs:
+                job.is_active = False
+                jobs_deactivated += 1
+            
+            # Soft delete the source by setting is_active to False
             source.is_active = False
+            
             session.commit()
+            logger.info(f"Deleted source {source_id} ({source.name or source.url}) and deactivated {jobs_deactivated} related jobs")
             return True
         return False
     except Exception as e:
         session.rollback()
+        logger.error(f"Error deleting source {source_id}: {e}")
         raise e
     finally:
         session.close()
