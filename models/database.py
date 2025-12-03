@@ -173,7 +173,7 @@ def get_jobs(page=1, per_page=20, search='', location='', level='', pay=''):
     try:
         query = session.query(Job).filter(Job.is_active == True)
         
-        # Search in title, company, description with whole word matching
+        # Search in title and company only (not description) with whole word matching
         if search:
             # Split search terms and match each as whole word
             search_terms = search.strip().split()
@@ -195,10 +195,10 @@ def get_jobs(page=1, per_page=20, search='', location='', level='', pay=''):
                     import re
                     term_escaped = re.escape(term_lower)
                     regex_pattern = f'\\y{term_escaped}\\y'
+                    # Only search in title and company, NOT description
                     search_conditions.append(
                         (Job.title.op('~*')(regex_pattern)) |
-                        (Job.company.op('~*')(regex_pattern)) |
-                        (Job.description.op('~*')(regex_pattern))
+                        (Job.company.op('~*')(regex_pattern))
                     )
                 else:
                     # SQLite: Use LIKE with word boundaries
@@ -210,18 +210,13 @@ def get_jobs(page=1, per_page=20, search='', location='', level='', pay=''):
                     # 1. Word at start of string
                     # 2. Word at end of string  
                     # 3. Word with space before and after
-                    # 4. Word with space before and punctuation/end after
-                    # 5. Word with punctuation/start before and space after
-                    # 6. Exact match (single word)
+                    # 4. Exact match (single word)
                     start_pattern = f'{term_escaped} %'
                     end_pattern = f'% {term_escaped}'
                     middle_pattern = f'% {term_escaped} %'
                     exact_pattern = term_escaped
                     
-                    # Also match with common punctuation as word boundaries
-                    punct_before = f'%[{term_escaped}]%'  # Word after punctuation
-                    punct_after = f'%[{term_escaped}]%'   # Word before punctuation
-                    
+                    # Only search in title and company, NOT description
                     search_conditions.append(
                         (Job.title.ilike(start_pattern)) |
                         (Job.title.ilike(end_pattern)) |
@@ -230,11 +225,7 @@ def get_jobs(page=1, per_page=20, search='', location='', level='', pay=''):
                         (Job.company.ilike(start_pattern)) |
                         (Job.company.ilike(end_pattern)) |
                         (Job.company.ilike(middle_pattern)) |
-                        (Job.company.ilike(exact_pattern)) |
-                        (Job.description.ilike(start_pattern)) |
-                        (Job.description.ilike(end_pattern)) |
-                        (Job.description.ilike(middle_pattern)) |
-                        (Job.description.ilike(exact_pattern))
+                        (Job.company.ilike(exact_pattern))
                     )
             
             # All search terms must be present (AND condition)
