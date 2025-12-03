@@ -59,7 +59,24 @@ if database_url:
     # Convert postgres:// to postgresql:// for SQLAlchemy compatibility
     if database_url.startswith('postgres://'):
         database_url = database_url.replace('postgres://', 'postgresql://', 1)
-    engine = create_engine(database_url, echo=False)
+    
+    # Configure connection pool for PostgreSQL to handle SSL errors
+    # pool_pre_ping: Test connections before using them to handle stale connections
+    # pool_recycle: Recycle connections after 1 hour to prevent SSL errors
+    # pool_size: Number of connections to maintain
+    # max_overflow: Additional connections that can be created
+    engine = create_engine(
+        database_url,
+        echo=False,
+        pool_pre_ping=True,  # Test connections before using (fixes SSL errors)
+        pool_recycle=3600,   # Recycle connections after 1 hour
+        pool_size=5,         # Maintain 5 connections
+        max_overflow=10,     # Allow up to 10 additional connections
+        connect_args={
+            "connect_timeout": 10,
+            "sslmode": "require"  # Ensure SSL is used
+        }
+    )
 else:
     # Development: SQLite
     db_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'database.db')
@@ -435,38 +452,74 @@ def get_unique_companies_count():
         session.close()
 
 def get_refresh_status():
-    """Get refresh status"""
-    session = SessionLocal()
-    try:
-        status = session.query(RefreshStatus).first()
-        companies_count = get_unique_companies_count()
-        
-        # Check if API limit should be reset (new day)
-        if status and status.api_limit_reached and status.api_limit_date:
-            limit_date = status.api_limit_date.date()
-            today = datetime.utcnow().date()
-            if limit_date < today:
-                # New day, reset the limit
-                status.api_limit_reached = False
-                status.api_limit_date = None
-                session.commit()
-        
-        if status:
+    """Get refresh status with retry logic for connection errors"""
+    from sqlalchemy.exc import OperationalError
+    max_retries = 3
+    
+    for attempt in range(max_retries):
+        session = SessionLocal()
+        try:
+            status = session.query(RefreshStatus).first()
+            companies_count = get_unique_companies_count()
+            
+            # Check if API limit should be reset (new day)
+            if status and status.api_limit_reached and status.api_limit_date:
+                limit_date = status.api_limit_date.date()
+                today = datetime.utcnow().date()
+                if limit_date < today:
+                    # New day, reset the limit
+                    status.api_limit_reached = False
+                    status.api_limit_date = None
+                    session.commit()
+            
+            if status:
+                return {
+                    'last_refresh': status.last_refresh.isoformat() if status.last_refresh else None,
+                    'jobs_count': status.jobs_count,
+                    'sources_count': status.sources_count,
+                    'companies_count': companies_count,
+                    'api_limit_reached': status.api_limit_reached if status else False,
+                    'api_limit_date': status.api_limit_date.isoformat() if status and status.api_limit_date else None
+                }
             return {
-                'last_refresh': status.last_refresh.isoformat() if status.last_refresh else None,
-                'jobs_count': status.jobs_count,
-                'sources_count': status.sources_count,
+                'last_refresh': None,
+                'jobs_count': 0,
+                'sources_count': 0,
                 'companies_count': companies_count,
-                'api_limit_reached': status.api_limit_reached if status else False,
-                'api_limit_date': status.api_limit_date.isoformat() if status and status.api_limit_date else None
+                'api_limit_reached': False,
+                'api_limit_date': None
             }
-        return {
-            'last_refresh': None,
-            'jobs_count': 0,
-            'sources_count': 0,
-            'companies_count': companies_count,
-            'api_limit_reached': False,
-            'api_limit_date': None
-        }
-    finally:
-        session.close()
+        except OperationalError as e:
+            # Handle SSL/connection errors with retry
+            session.close()
+            if attempt < max_retries - 1:
+                import time
+                time.sleep(0.5 * (attempt + 1))  # Exponential backoff
+                continue
+            else:
+                # Last attempt failed, return default values
+                print(f"Warning: Database connection error after {max_retries} attempts: {e}")
+                return {
+                    'last_refresh': None,
+                    'jobs_count': 0,
+                    'sources_count': 0,
+                    'companies_count': 0,
+                    'api_limit_reached': False,
+                    'api_limit_date': None
+                }
+        except Exception as e:
+            session.close()
+            print(f"Error getting refresh status: {e}")
+            return {
+                'last_refresh': None,
+                'jobs_count': 0,
+                'sources_count': 0,
+                'companies_count': 0,
+                'api_limit_reached': False,
+                'api_limit_date': None
+            }
+        finally:
+            try:
+                session.close()
+            except:
+                pass
