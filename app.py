@@ -172,12 +172,28 @@ def api_delete_source(source_id):
 
 @app.route('/api/refresh-now', methods=['POST'])
 def api_refresh_now():
-    """Manually trigger immediate refresh"""
-    try:
-        collector_manager.collect_all()
-        return jsonify({'success': True, 'message': 'Refresh successful'})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    """Manually trigger immediate refresh (non-blocking)"""
+    import threading
+    
+    def run_collection():
+        """Run data collection in background thread"""
+        try:
+            collector_manager.collect_all()
+            print("Manual refresh completed successfully")
+        except Exception as e:
+            print(f"Manual refresh failed: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    # Start collection in background thread to avoid worker timeout
+    thread = threading.Thread(target=run_collection, daemon=True)
+    thread.start()
+    
+    # Return immediately to avoid blocking the HTTP request
+    return jsonify({
+        'success': True, 
+        'message': 'Refresh started in background. Check logs for progress.'
+    })
 
 @app.route('/api/ai-recommendations', methods=['POST'])
 def api_ai_recommendations():
