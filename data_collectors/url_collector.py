@@ -165,26 +165,26 @@ Return format: {{"jobs": [...]}}"""
             if self.llm_type == 'gemini':
                 # Use Gemini API
                 try:
-                    # Gemini 2.0 supports JSON mode via response_mime_type
-                    response = self.llm_client.generate_content(
-                        prompt,
-                        generation_config={
-                            "temperature": 0.1,
-                            "max_output_tokens": 2000,
-                            "response_mime_type": "application/json"
-                        }
-                    )
-                    content = response.text.strip()
-                except Exception as e:
-                    # If JSON mode fails (older API version), try without it
-                    logger.warning(f"Gemini JSON mode failed, trying without: {e}")
+                    # Try with JSON mode first (Gemini 2.0 supports this)
                     try:
                         response = self.llm_client.generate_content(
                             prompt,
-                            generation_config={
-                                "temperature": 0.1,
-                                "max_output_tokens": 2000
-                            }
+                            generation_config=genai.types.GenerationConfig(
+                                temperature=0.1,
+                                max_output_tokens=2000,
+                                response_mime_type="application/json"
+                            )
+                        )
+                        content = response.text.strip()
+                    except (AttributeError, TypeError) as json_error:
+                        # If response_mime_type is not supported, try without it
+                        logger.debug(f"JSON mode not supported, trying without: {json_error}")
+                        response = self.llm_client.generate_content(
+                            prompt,
+                            generation_config=genai.types.GenerationConfig(
+                                temperature=0.1,
+                                max_output_tokens=2000
+                            )
                         )
                         content = response.text.strip()
                         # Try to extract JSON from markdown code blocks if present
@@ -198,9 +198,9 @@ Return format: {{"jobs": [...]}}"""
                             json_match = re.search(r'\{.*"jobs".*\}', content, re.DOTALL)
                             if json_match:
                                 content = json_match.group(0)
-                    except Exception as e2:
-                        logger.error(f"Gemini API call failed: {e2}")
-                        return jobs
+                except Exception as e:
+                    logger.error(f"Gemini API call failed: {e}")
+                    return jobs
             else:
                 # Use OpenAI API
                 response = self.llm_client.chat.completions.create(
@@ -392,21 +392,21 @@ Return format: {{"jobs": [...]}}"""
                 location = self._extract_location_near_element(elem, parent)
                 description = self._extract_description_near_element(elem, parent)
                 
-                    level = self._detect_level(title, description)
-                    
-                    if title and link:
-                        jobs.append({
-                            'title': title,
-                            'company': company,
-                            'location': location,
-                            'description': description,
-                            'url': link,
-                            'level': level,
-                            'posted_date': None
-                        })
-                except Exception as e:
+                level = self._detect_level(title, description)
+                
+                if title and link:
+                    jobs.append({
+                        'title': title,
+                        'company': company,
+                        'location': location,
+                        'description': description,
+                        'url': link,
+                        'level': level,
+                        'posted_date': None
+                    })
+            except Exception as e:
                 logger.debug(f"Failed to extract job from title element: {e}")
-                    continue
+                continue
         
         return jobs
     
