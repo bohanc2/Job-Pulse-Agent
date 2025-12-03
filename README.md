@@ -5,22 +5,28 @@ An intelligent job aggregation platform that collects and displays job opportuni
 ## Features
 
 - 🔍 **Multi-source Data Collection**: Collects jobs from Adzuna API, RSS feeds, and company URLs
-- 🔄 **Auto Refresh**: Automatically updates the database every hour, fetching all available jobs
-- 📊 **Real-time Status**: Displays job count, company count, and last refresh time
+- 🔄 **Auto Refresh**: Automatically updates the database every hour with smart keyword rotation
+- 🎯 **Smart Collection**: Continuously collects jobs until API limit is reached, then automatically resumes the next day
+- 🔑 **Keyword Rotation**: Intelligently rotates through different job keywords each hour to collect diverse jobs without exceeding API limits
+- ⚠️ **API Limit Detection**: Automatically detects when daily API limit is reached and displays user-friendly notifications
+- 📊 **Real-time Status**: Displays job count, company count, and last refresh time with API limit status
 - 🔎 **Advanced Search**: Search jobs by title, company, description, and location
 - 🎨 **Beautiful UI**: Modern Morandi blue color scheme for a comfortable viewing experience
 - 🏷️ **Smart Filtering**: Filter by job level (Entry, Mid-level, Senior) and minimum salary
 - ➕ **Extensible**: Users can add new data sources through the web interface
 - 📱 **Responsive Design**: Works seamlessly on desktop and mobile devices
+- 🗄️ **PostgreSQL Support**: Production-ready with connection pooling and automatic migrations
 
 ## Tech Stack
 
-- **Backend**: Python 3.8+ + Flask 3.0.0
-- **Database**: SQLite (can be migrated to PostgreSQL for production)
+- **Backend**: Python 3.11+ + Flask 3.0.0
+- **Database**: SQLite (development) / PostgreSQL (production) with automatic migrations
 - **Data Collection**: Adzuna API, BeautifulSoup, Feedparser, Requests
 - **Frontend**: HTML5 + CSS3 + Vanilla JavaScript
-- **Scheduler**: APScheduler for automatic hourly updates
+- **Scheduler**: APScheduler for automatic hourly updates with keyword rotation
 - **AI Service**: OpenAI API (optional, for enhanced job classification)
+- **Production Server**: Gunicorn with connection pooling
+- **Deployment**: Render.com ready with Procfile and runtime configuration
 
 ## Prerequisites
 
@@ -175,31 +181,85 @@ To manually trigger a data collection:
 2. Click **"🔄 Refresh Now"** button
 3. Wait for the collection to complete (may take a few minutes)
 
+**Note**: Manual refresh runs asynchronously and won't block the interface. Collection continues in the background.
+
+## Smart Collection Features
+
+### Intelligent Keyword Rotation
+
+The system automatically rotates through different job keywords each hour to collect diverse jobs:
+
+- **Default Keywords**: software engineer, data scientist, product manager, marketing, sales, designer, developer, analyst, consultant, manager
+- **Customizable**: Set your own keywords via `ADZUNA_KEYWORDS` environment variable
+- **Benefit**: Collects thousands of jobs over time without exceeding daily API limits
+
+**Example Collection Schedule**:
+- **Hour 1**: Collect "software engineer" jobs (500 jobs)
+- **Hour 2**: Collect "data scientist" jobs (500 jobs)
+- **Hour 3**: Collect "product manager" jobs (500 jobs)
+- ...continues through all keywords
+- **Result**: 5,000+ unique jobs collected over 10 hours
+
+### API Limit Management
+
+- **Continuous Collection**: Collects jobs until daily API limit is reached (no fixed page limit)
+- **Automatic Detection**: Detects when limit is reached (429 error) and stops gracefully
+- **User Notification**: Displays clear notification banner when limit is reached
+- **Auto Resume**: Automatically resumes collection the next day at midnight UTC
+- **No Manual Intervention**: Fully automated process
+
+**How It Works**:
+1. System starts collecting jobs continuously
+2. When API returns 429 (rate limit), collection stops
+3. User sees notification: "Daily API limit reached. Collection will automatically resume tomorrow."
+4. Next day, system automatically resets and continues collection
+
+### Collection Strategy Options
+
+**Option 1: Unlimited Collection (Recommended)**
+- Don't set `ADZUNA_MAX_PAGES`
+- System collects until API limit is reached
+- Maximum jobs collected per day (depends on your API tier)
+
+**Option 2: Conservative Collection**
+- Set `ADZUNA_MAX_PAGES=10` (500 jobs per collection)
+- Safer for free tier accounts
+- Prevents hitting limit unexpectedly
+
+**Option 3: Custom Keywords**
+- Set `ADZUNA_KEYWORDS=field service,technical support,customer success`
+- Focus on specific job categories
+- Rotates through your custom keywords
+
 ## Project Structure
 
 ```
-Ascendo/
+Job-Pulse-Agent/
 ├── app.py                      # Flask main application
 ├── ai_service.py               # AI service (optional, works without OpenAI API)
-├── scheduler.py                # Scheduled tasks manager
+├── scheduler.py                # Scheduled tasks manager with keyword rotation
 ├── requirements.txt            # Python dependencies
-├── .env                        # Environment variables (create this file)
+├── runtime.txt                 # Python version specification
+├── Procfile                    # Production server configuration
+├── .env                        # Environment variables (create this file, not in repo)
 ├── .gitignore                  # Git ignore rules
-├── database.db                 # SQLite database (auto-created)
+├── README.md                   # This file - project documentation
+├── DEPLOYMENT.md               # Render deployment guide
+├── database.db                 # SQLite database (auto-created, not in repo)
 ├── data_collectors/            # Data collection modules
 │   ├── __init__.py
 │   ├── collector_manager.py   # Manages all collectors
-│   ├── api_collector.py        # Adzuna API collector
+│   ├── api_collector.py        # Adzuna API collector with limit detection
 │   ├── rss_collector.py        # RSS feed collector
 │   └── url_collector.py        # URL scraper
 ├── models/                     # Database models
 │   ├── __init__.py
-│   └── database.py             # SQLAlchemy models and database functions
+│   └── database.py             # SQLAlchemy models with auto-migration
 ├── templates/                  # HTML templates
 │   └── index.html              # Main page template
 └── static/                     # Static files
     ├── style.css               # Stylesheet (Morandi blue theme)
-    └── script.js               # Frontend JavaScript
+    └── script.js               # Frontend JavaScript with API limit notifications
 ```
 
 ## API Endpoints
@@ -231,9 +291,19 @@ Get current refresh status and statistics.
   "last_refresh": "2025-11-30T10:50:14.780668",
   "jobs_count": 5290,
   "sources_count": 2,
-  "companies_count": 2303
+  "companies_count": 2303,
+  "api_limit_reached": false,
+  "api_limit_date": null
 }
 ```
+
+**Response Fields:**
+- `last_refresh`: ISO timestamp of last data collection
+- `jobs_count`: Total number of active jobs in database
+- `sources_count`: Number of active data sources
+- `companies_count`: Number of unique companies
+- `api_limit_reached`: Boolean indicating if daily API limit was reached
+- `api_limit_date`: ISO timestamp when limit was reached (null if not reached)
 
 ### GET `/api/sources`
 Get all configured data sources.
@@ -254,7 +324,28 @@ Add a new data source.
 Delete (deactivate) a data source.
 
 ### POST `/api/refresh-now`
-Manually trigger immediate data collection from all sources.
+Manually trigger immediate data collection from all sources (non-blocking, runs in background).
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Refresh started in background. Check logs for progress."
+}
+```
+
+### GET `/api/debug/jobs-count`
+Debug endpoint to check job count in database (for troubleshooting).
+
+**Response:**
+```json
+{
+  "total_jobs": 5000,
+  "active_jobs": 5000,
+  "inactive_jobs": 0,
+  "sample_jobs": [...]
+}
+```
 
 ## Database Schema
 
@@ -281,7 +372,12 @@ Manually trigger immediate data collection from all sources.
 - `created_date`: When the source was added
 
 ### Refresh Status Table
-- Tracks last refresh time and statistics
+- `id`: Primary key
+- `last_refresh`: Last data collection timestamp
+- `jobs_count`: Total number of active jobs
+- `sources_count`: Number of active data sources
+- `api_limit_reached`: Boolean flag for API limit status
+- `api_limit_date`: Timestamp when API limit was reached (for daily reset)
 
 ## Configuration
 
@@ -292,6 +388,11 @@ Manually trigger immediate data collection from all sources.
 | `ADZUNA_APP_ID` | Yes | Adzuna API Application ID |
 | `ADZUNA_APP_KEY` | Yes | Adzuna API Application Key |
 | `OPENAI_API_KEY` | No | OpenAI API Key (for AI features) |
+| `ADZUNA_MAX_PAGES` | No | Maximum pages per collection (default: unlimited, collects until API limit) |
+| `ADZUNA_USE_KEYWORD_ROTATION` | No | Enable keyword rotation (default: true) |
+| `ADZUNA_KEYWORDS` | No | Comma-separated keywords for rotation (default: 10 common job categories) |
+| `FLASK_ENV` | No | Environment mode: `production` or `development` (default: development) |
+| `DATABASE_URL` | No | PostgreSQL connection string (auto-provided by Render, uses SQLite if not set) |
 
 ### Port Configuration
 
@@ -332,6 +433,16 @@ app.run(debug=True, host='0.0.0.0', port=5000)  # Change 5000 to your desired po
 - **Check**: Check API rate limits (free tier has limits)
 - **Note**: First collection may take several minutes to fetch all jobs
 
+**Issue**: "Daily API limit reached" notification appears
+- **Explanation**: This is normal behavior - the system has collected the maximum allowed jobs for today
+- **Action**: No action needed - collection will automatically resume tomorrow
+- **Note**: You can still view and search all previously collected jobs
+
+**Issue**: Collection stops before expected
+- **Check**: Verify `ADZUNA_MAX_PAGES` is not set too low
+- **Check**: Check if API limit was reached (see notification banner)
+- **Solution**: Remove `ADZUNA_MAX_PAGES` to collect until limit, or increase the value
+
 **Issue**: RSS feed not working
 - **Check**: Verify the RSS URL is accessible and valid
 - **Check**: Ensure the feed contains job listings in a standard format
@@ -358,17 +469,24 @@ The application runs in debug mode by default:
 
 ### Database Migrations
 
-Currently using SQLite. For production, consider migrating to PostgreSQL:
-1. Update database connection string in `models/database.py`
-2. Install PostgreSQL adapter: `pip install psycopg2-binary`
-3. Update connection string format
+The system automatically handles database migrations:
+- **SQLite (Development)**: Automatically creates tables and adds new columns
+- **PostgreSQL (Production)**: Auto-migration on startup, adds missing columns automatically
+- **No Manual Steps**: Schema changes are detected and applied automatically
+
+**Manual Migration** (if needed):
+1. The system automatically detects and adds new columns
+2. For major schema changes, the migration logic in `init_db()` handles it
+3. No manual SQL scripts required
 
 ## Performance Notes
 
 - **Initial Collection**: First data collection may take 10-30 minutes depending on the number of jobs
-- **Hourly Updates**: Updates only fetch new/changed jobs, so subsequent updates are faster
+- **Hourly Updates**: With keyword rotation, each hour collects jobs for a different keyword (500 jobs per keyword)
+- **Continuous Collection**: When limit is not set, system collects until API limit is reached (can collect 1000+ jobs in one session)
 - **Pagination**: Jobs are displayed 20 per page by default
 - **Search Performance**: Search is performed on the database, optimized with indexes
+- **Database**: PostgreSQL connection pooling ensures stable performance under load
 
 ## Security Considerations
 
@@ -393,13 +511,19 @@ For issues or questions:
 
 ### Current Version
 - ✅ Multi-source data collection (Adzuna API, RSS, URL)
-- ✅ Automatic hourly updates
+- ✅ Automatic hourly updates with smart keyword rotation
 - ✅ Advanced search and filtering
 - ✅ Beautiful Morandi blue UI
 - ✅ Job level classification (Entry, Mid, Senior)
 - ✅ Salary-based filtering
 - ✅ Responsive design
-- ✅ Real-time statistics
+- ✅ Real-time statistics with API limit status
+- ✅ Smart API limit detection and user notifications
+- ✅ Continuous collection until daily limit reached
+- ✅ Automatic daily limit reset
+- ✅ PostgreSQL support with connection pooling
+- ✅ Asynchronous data collection (non-blocking)
+- ✅ Database auto-migration for schema updates
 
 ## Cloud Deployment (Render)
 
@@ -446,7 +570,14 @@ ADZUNA_APP_ID=your_app_id_here
 ADZUNA_APP_KEY=your_app_key_here
 OPENAI_API_KEY=your_openai_key_here (optional)
 FLASK_ENV=production
+ADZUNA_USE_KEYWORD_ROTATION=true (optional, default: true)
+ADZUNA_KEYWORDS=software engineer,data scientist,product manager (optional)
+ADZUNA_MAX_PAGES=10 (optional, default: unlimited)
 ```
+
+**Recommended Settings**:
+- `ADZUNA_USE_KEYWORD_ROTATION=true`: Enable smart keyword rotation
+- `ADZUNA_MAX_PAGES`: Leave unset to collect until API limit, or set to 10-20 for conservative collection
 
 #### Step 4: Create PostgreSQL Database
 
