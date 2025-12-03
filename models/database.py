@@ -731,7 +731,18 @@ def cleanup_duplicate_jobs():
                         session.delete(job)
                         title_duplicates_deleted += 1
         
-        # Strategy 3: Remove inactive jobs older than 30 days (optional cleanup)
+        # Strategy 3: Remove invalid jobs (missing critical fields)
+        invalid_jobs_deleted = session.query(Job).filter(
+            Job.is_active == True,
+            or_(
+                Job.title.is_(None),
+                Job.title == '',
+                Job.url.is_(None),
+                Job.url == ''
+            )
+        ).delete(synchronize_session=False)
+        
+        # Strategy 4: Remove inactive jobs older than 30 days (optional cleanup)
         from datetime import timedelta
         cutoff_date = datetime.utcnow() - timedelta(days=30)
         old_inactive_deleted = session.query(Job).filter(
@@ -739,15 +750,28 @@ def cleanup_duplicate_jobs():
             Job.collected_date < cutoff_date
         ).delete(synchronize_session=False)
         
+        # Strategy 5: Clean up jobs with empty or invalid company names
+        # These might be counted as separate companies, inflating the count
+        empty_company_deleted = session.query(Job).filter(
+            Job.is_active == True,
+            or_(
+                Job.company.is_(None),
+                Job.company == '',
+                func.trim(Job.company) == ''
+            )
+        ).delete(synchronize_session=False)
+        
         session.commit()
         
-        total_deleted = url_duplicates_deleted + title_duplicates_deleted + old_inactive_deleted
+        total_deleted = url_duplicates_deleted + title_duplicates_deleted + invalid_jobs_deleted + old_inactive_deleted + empty_company_deleted
         
-        logger.info(f"Cleanup completed: {url_duplicates_deleted} URL duplicates, {title_duplicates_deleted} title+company duplicates, {old_inactive_deleted} old inactive jobs deleted (total: {total_deleted})")
+        logger.info(f"Cleanup completed: {url_duplicates_deleted} URL duplicates, {title_duplicates_deleted} title+company duplicates, {invalid_jobs_deleted} invalid jobs, {empty_company_deleted} empty company jobs, {old_inactive_deleted} old inactive jobs deleted (total: {total_deleted})")
         
         return {
             'url_duplicates_deleted': url_duplicates_deleted,
             'title_duplicates_deleted': title_duplicates_deleted,
+            'invalid_jobs_deleted': invalid_jobs_deleted,
+            'empty_company_deleted': empty_company_deleted,
             'old_inactive_deleted': old_inactive_deleted,
             'total_deleted': total_deleted
         }

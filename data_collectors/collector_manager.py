@@ -6,7 +6,7 @@ Unified management of all data source collection work
 from data_collectors.rss_collector import RSSCollector
 from data_collectors.url_collector import URLCollector
 from data_collectors.api_collector import APICollector
-from models.database import get_job_sources, add_job, update_refresh_status
+from models.database import get_job_sources, add_job, update_refresh_status, cleanup_duplicate_jobs
 import logging
 
 logging.basicConfig(level=logging.INFO)
@@ -78,6 +78,14 @@ class CollectorManager:
                 source.get('name', '')
             )
             total_collected += len(jobs)
+        
+        # Clean up duplicates after collection to keep database clean
+        logger.info("Cleaning up duplicate jobs...")
+        try:
+            cleanup_result = cleanup_duplicate_jobs()
+            logger.info(f"Cleanup completed: {cleanup_result['total_deleted']} duplicates removed")
+        except Exception as e:
+            logger.warning(f"Cleanup failed (non-critical): {e}")
         
         # Update refresh status (check if any source hit API limit)
         # The API collector will have already updated the status if limit was reached
