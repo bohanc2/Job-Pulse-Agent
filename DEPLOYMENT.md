@@ -87,7 +87,8 @@ In the Web Service settings page, find the **"Environment"** section and add the
 ```
 ADZUNA_APP_ID=your_adzuna_app_id
 ADZUNA_APP_KEY=your_adzuna_app_key
-OPENAI_API_KEY=your_openai_key (optional)
+GEMINI_API_KEY=your_gemini_api_key (optional, for URL collection with LLM)
+OPENAI_API_KEY=your_openai_key (optional, fallback for URL collection)
 FLASK_ENV=production
 ADZUNA_MAX_PAGES=10 (optional, default is 10 pages, 50 jobs per page)
 ADZUNA_USE_KEYWORD_ROTATION=true (optional, default is true)
@@ -96,6 +97,8 @@ ADZUNA_KEYWORDS=software engineer,data scientist,product manager,marketing,sales
 
 **Important**: 
 - `DATABASE_URL` is automatically provided from the PostgreSQL service, no need to add manually
+- `GEMINI_API_KEY`: For URL collection using Google Gemini 2.0 Flash Lite (free tier available, recommended). Get your API key from [Google AI Studio](https://makersuite.google.com/app/apikey)
+- `OPENAI_API_KEY`: Optional fallback for URL collection if Gemini is not available
 - `ADZUNA_MAX_PAGES`: Limits the maximum number of pages per collection to avoid exceeding Adzuna API daily request limits (free tier has daily limits)
 - `ADZUNA_USE_KEYWORD_ROTATION`: When enabled (default), the scheduler will rotate through different keywords each hour to collect more diverse jobs without exceeding API limits
 - `ADZUNA_KEYWORDS`: Comma-separated list of keywords to rotate through. If not set, uses default keywords covering various job categories

@@ -78,7 +78,11 @@ Add the following content to `.env`:
 ADZUNA_APP_ID=your_app_id_here
 ADZUNA_APP_KEY=your_app_key_here
 
-# OpenAI API Key (Optional - for AI features)
+# Google Gemini API Key (Optional - for URL collection with LLM, recommended)
+# Get your free API key from: https://makersuite.google.com/app/apikey
+GEMINI_API_KEY=your_gemini_api_key_here
+
+# OpenAI API Key (Optional - fallback for URL collection if Gemini is not available)
 OPENAI_API_KEY=your_openai_api_key_here
 ```
 
@@ -387,7 +391,8 @@ Debug endpoint to check job count in database (for troubleshooting).
 |----------|----------|-------------|
 | `ADZUNA_APP_ID` | Yes | Adzuna API Application ID |
 | `ADZUNA_APP_KEY` | Yes | Adzuna API Application Key |
-| `OPENAI_API_KEY` | No | OpenAI API Key (for AI features) |
+| `GEMINI_API_KEY` | No | Google Gemini API Key (for URL collection with LLM, recommended, free tier available) |
+| `OPENAI_API_KEY` | No | OpenAI API Key (fallback for URL collection if Gemini is not available) |
 | `ADZUNA_MAX_PAGES` | No | Maximum pages per collection (default: unlimited, collects until API limit) |
 | `ADZUNA_USE_KEYWORD_ROTATION` | No | Enable keyword rotation (default: true) |
 | `ADZUNA_KEYWORDS` | No | Comma-separated keywords for rotation (default: 10 common job categories) |
@@ -568,7 +573,8 @@ In Render Dashboard → Your Service → Environment, add:
 ```
 ADZUNA_APP_ID=your_app_id_here
 ADZUNA_APP_KEY=your_app_key_here
-OPENAI_API_KEY=your_openai_key_here (optional)
+GEMINI_API_KEY=your_gemini_api_key_here (optional, recommended for URL collection)
+OPENAI_API_KEY=your_openai_key_here (optional, fallback for URL collection)
 FLASK_ENV=production
 ADZUNA_USE_KEYWORD_ROTATION=true (optional, default: true)
 ADZUNA_KEYWORDS=software engineer,data scientist,product manager (optional)

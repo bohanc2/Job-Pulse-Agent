@@ -13,29 +13,60 @@ import json
 
 logger = logging.getLogger(__name__)
 
-# Try to import OpenAI, but make it optional
+# Try to import OpenAI and Gemini, but make them optional
 try:
     import openai
     OPENAI_AVAILABLE = True
 except ImportError:
     OPENAI_AVAILABLE = False
-    logger.warning("OpenAI not available, LLM extraction will not work")
+    logger.warning("OpenAI not available")
+
+try:
+    import google.generativeai as genai
+    GEMINI_AVAILABLE = True
+except ImportError:
+    GEMINI_AVAILABLE = False
+    logger.warning("Google Generative AI not available")
 
 class URLCollector:
     """URL scraping collector using LLM for extraction"""
     
     def __init__(self):
-        """Initialize URL collector with optional OpenAI client"""
-        self.openai_client = None
+        """Initialize URL collector with optional LLM client (Gemini or OpenAI)"""
+        self.llm_client = None
+        self.llm_type = None
+        
+        # Try Gemini first (free tier available, faster and cheaper)
+        gemini_key = os.getenv('GEMINI_API_KEY')
+        if GEMINI_AVAILABLE and gemini_key:
+            try:
+                genai.configure(api_key=gemini_key)
+                # Try gemini-2.0-flash-exp first, fallback to gemini-1.5-flash if not available
+                try:
+                    self.llm_client = genai.GenerativeModel('gemini-2.0-flash-exp')
+                    self.llm_type = 'gemini'
+                    logger.info("Gemini 2.0 Flash client initialized for URL collection")
+                except Exception:
+                    # Fallback to gemini-1.5-flash if 2.0 is not available
+                    self.llm_client = genai.GenerativeModel('gemini-1.5-flash')
+                    self.llm_type = 'gemini'
+                    logger.info("Gemini 1.5 Flash client initialized for URL collection")
+                return
+            except Exception as e:
+                logger.warning(f"Failed to initialize Gemini client: {e}")
+        
+        # Fallback to OpenAI
         api_key = os.getenv('OPENAI_API_KEY')
         if OPENAI_AVAILABLE and api_key:
             try:
-                self.openai_client = openai.OpenAI(api_key=api_key)
+                self.llm_client = openai.OpenAI(api_key=api_key)
+                self.llm_type = 'openai'
                 logger.info("OpenAI client initialized for URL collection")
             except Exception as e:
                 logger.warning(f"Failed to initialize OpenAI client: {e}")
-        else:
-            logger.warning("OpenAI API key not set, URL collection will use fallback method")
+        
+        if not self.llm_client:
+            logger.warning("No LLM API key set (GEMINI_API_KEY or OPENAI_API_KEY), URL collection will not work")
     
     def collect(self, url):
         """Collect jobs from specified URL using LLM extraction"""
@@ -61,10 +92,10 @@ class URLCollector:
                 return jobs
             
             # Use LLM to extract job information
-            if self.openai_client:
+            if self.llm_client:
                 jobs = self._extract_jobs_with_llm(page_text, url)
             else:
-                logger.warning("OpenAI client not available, cannot use LLM extraction")
+                logger.warning("LLM client not available, cannot use LLM extraction")
                 return jobs
             
             logger.info(f"Collected {len(jobs)} jobs from URL using LLM")
@@ -98,7 +129,7 @@ class URLCollector:
         """Use LLM to extract job information from page text"""
         jobs = []
         
-        if not self.openai_client:
+        if not self.llm_client:
             return jobs
         
         try:
@@ -131,25 +162,64 @@ Important rules:
 
 Return format: {{"jobs": [...]}}"""
 
-            response = self.openai_client.chat.completions.create(
-                model="gpt-4o-mini",  # Using cheaper model for cost efficiency
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are a professional job data extraction system. Extract job listings from webpage text and return structured JSON data. Always return valid JSON arrays only."
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
-                temperature=0.1,  # Low temperature for consistent extraction
-                max_tokens=2000,  # Enough for multiple job listings
-                response_format={"type": "json_object"}  # Force JSON response
-            )
-            
-            # Parse response
-            content = response.choices[0].message.content.strip()
+            if self.llm_type == 'gemini':
+                # Use Gemini API
+                try:
+                    # Gemini 2.0 supports JSON mode via response_mime_type
+                    response = self.llm_client.generate_content(
+                        prompt,
+                        generation_config={
+                            "temperature": 0.1,
+                            "max_output_tokens": 2000,
+                            "response_mime_type": "application/json"
+                        }
+                    )
+                    content = response.text.strip()
+                except Exception as e:
+                    # If JSON mode fails (older API version), try without it
+                    logger.warning(f"Gemini JSON mode failed, trying without: {e}")
+                    try:
+                        response = self.llm_client.generate_content(
+                            prompt,
+                            generation_config={
+                                "temperature": 0.1,
+                                "max_output_tokens": 2000
+                            }
+                        )
+                        content = response.text.strip()
+                        # Try to extract JSON from markdown code blocks if present
+                        import re
+                        # Look for JSON in code blocks or plain JSON
+                        json_match = re.search(r'```(?:json)?\s*(\{.*"jobs".*\})', content, re.DOTALL)
+                        if json_match:
+                            content = json_match.group(1)
+                        else:
+                            # Try to find JSON object directly
+                            json_match = re.search(r'\{.*"jobs".*\}', content, re.DOTALL)
+                            if json_match:
+                                content = json_match.group(0)
+                    except Exception as e2:
+                        logger.error(f"Gemini API call failed: {e2}")
+                        return jobs
+            else:
+                # Use OpenAI API
+                response = self.llm_client.chat.completions.create(
+                    model="gpt-4o-mini",  # Using cheaper model for cost efficiency
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": "You are a professional job data extraction system. Extract job listings from webpage text and return structured JSON data. Always return valid JSON arrays only."
+                        },
+                        {
+                            "role": "user",
+                            "content": prompt
+                        }
+                    ],
+                    temperature=0.1,  # Low temperature for consistent extraction
+                    max_tokens=2000,  # Enough for multiple job listings
+                    response_format={"type": "json_object"}  # Force JSON response
+                )
+                content = response.choices[0].message.content.strip()
             
             # Try to parse as JSON
             try:
@@ -322,21 +392,21 @@ Return format: {{"jobs": [...]}}"""
                 location = self._extract_location_near_element(elem, parent)
                 description = self._extract_description_near_element(elem, parent)
                 
-                level = self._detect_level(title, description)
-                
-                if title and link:
-                    jobs.append({
-                        'title': title,
-                        'company': company,
-                        'location': location,
-                        'description': description,
-                        'url': link,
-                        'level': level,
-                        'posted_date': None
-                    })
-            except Exception as e:
+                    level = self._detect_level(title, description)
+                    
+                    if title and link:
+                        jobs.append({
+                            'title': title,
+                            'company': company,
+                            'location': location,
+                            'description': description,
+                            'url': link,
+                            'level': level,
+                            'posted_date': None
+                        })
+                except Exception as e:
                 logger.debug(f"Failed to extract job from title element: {e}")
-                continue
+                    continue
         
         return jobs
     
