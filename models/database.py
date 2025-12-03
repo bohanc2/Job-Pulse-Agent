@@ -576,6 +576,10 @@ def get_refresh_status():
         session = SessionLocal()
         try:
             status = session.query(RefreshStatus).first()
+            
+            # Calculate jobs_count in real-time instead of using cached value
+            # This ensures accuracy, especially after soft-deleting jobs or data sources
+            jobs_count = session.query(Job).filter(Job.is_active == True).count()
             companies_count = get_unique_companies_count()
             
             # Check if API limit should be reset (new day)
@@ -591,7 +595,7 @@ def get_refresh_status():
             if status:
                 return {
                     'last_refresh': status.last_refresh.isoformat() if status.last_refresh else None,
-                    'jobs_count': status.jobs_count,
+                    'jobs_count': jobs_count,  # Use real-time count instead of cached value
                     'sources_count': status.sources_count,
                     'companies_count': companies_count,
                     'api_limit_reached': status.api_limit_reached if status else False,
@@ -599,7 +603,7 @@ def get_refresh_status():
                 }
             return {
                 'last_refresh': None,
-                'jobs_count': 0,
+                'jobs_count': jobs_count,  # Use real-time count
                 'sources_count': 0,
                 'companies_count': companies_count,
                 'api_limit_reached': False,
