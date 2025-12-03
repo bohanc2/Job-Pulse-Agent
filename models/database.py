@@ -71,13 +71,84 @@ def init_db():
     """Initialize database"""
     Base.metadata.create_all(engine)
     
-    # Create default refresh status record
+    # Migrate existing tables: add new columns if they don't exist
     session = SessionLocal()
-    if session.query(RefreshStatus).count() == 0:
-        status = RefreshStatus()
-        session.add(status)
-        session.commit()
-    session.close()
+    try:
+        from sqlalchemy import inspect, text
+        
+        inspector = inspect(engine)
+        try:
+            columns = [col['name'] for col in inspector.get_columns('refresh_status')]
+        except Exception:
+            # Table doesn't exist yet, will be created by create_all
+            columns = []
+        
+        db_url = os.getenv('DATABASE_URL', '')
+        is_postgresql = db_url and ('postgresql' in db_url or 'postgres' in db_url)
+        
+        # Add api_limit_reached column if it doesn't exist
+        if 'api_limit_reached' not in columns:
+            try:
+                if is_postgresql:
+                    # PostgreSQL - check if column exists first
+                    result = session.execute(text("""
+                        SELECT column_name 
+                        FROM information_schema.columns 
+                        WHERE table_name='refresh_status' AND column_name='api_limit_reached'
+                    """))
+                    if not result.fetchone():
+                        session.execute(text('ALTER TABLE refresh_status ADD COLUMN api_limit_reached BOOLEAN DEFAULT FALSE'))
+                        session.commit()
+                        print("Added api_limit_reached column to refresh_status table")
+                else:
+                    # SQLite
+                    session.execute(text('ALTER TABLE refresh_status ADD COLUMN api_limit_reached BOOLEAN DEFAULT 0'))
+                    session.commit()
+                    print("Added api_limit_reached column to refresh_status table")
+            except Exception as e:
+                print(f"Warning: Could not add api_limit_reached column (may already exist): {e}")
+                session.rollback()
+        
+        # Add api_limit_date column if it doesn't exist
+        if 'api_limit_date' not in columns:
+            try:
+                if is_postgresql:
+                    # PostgreSQL - check if column exists first
+                    result = session.execute(text("""
+                        SELECT column_name 
+                        FROM information_schema.columns 
+                        WHERE table_name='refresh_status' AND column_name='api_limit_date'
+                    """))
+                    if not result.fetchone():
+                        session.execute(text('ALTER TABLE refresh_status ADD COLUMN api_limit_date TIMESTAMP'))
+                        session.commit()
+                        print("Added api_limit_date column to refresh_status table")
+                else:
+                    # SQLite
+                    session.execute(text('ALTER TABLE refresh_status ADD COLUMN api_limit_date DATETIME'))
+                    session.commit()
+                    print("Added api_limit_date column to refresh_status table")
+            except Exception as e:
+                print(f"Warning: Could not add api_limit_date column (may already exist): {e}")
+                session.rollback()
+    except Exception as e:
+        print(f"Warning: Could not check/migrate refresh_status table: {e}")
+        try:
+            session.rollback()
+        except:
+            pass
+    
+    # Create default refresh status record
+    try:
+        if session.query(RefreshStatus).count() == 0:
+            status = RefreshStatus()
+            session.add(status)
+            session.commit()
+    except Exception as e:
+        print(f"Warning: Could not create default refresh status: {e}")
+        session.rollback()
+    finally:
+        session.close()
 
 def get_jobs(page=1, per_page=20, search='', location='', level='', pay=''):
     """Get jobs list"""
